@@ -110,55 +110,63 @@ st.code("""
 • Where am I
 """)
 
+command = None
+
 if st.button("🎙️ Start Listening"):
-    command = listen_and_process()
+    try:
+        command = listen_and_process()
+    except:
+        st.warning("🎤 Microphone not available. Please type your command below.")
 
-    if command:
-        st.session_state.history.append(command)
+if not command:
+    command = st.text_input("⌨️ Type your command here:")
 
-        # Object Detection
-        if "object" in command.lower():
-            st.subheader("📸 Object Detection via Camera")
-            ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
-            if ctx.video_transformer:
-                st.warning("Click the button after showing the object")
-                if st.button("🖼️ Capture Frame"):
-                    frame = ctx.video_transformer.last_frame
-                    result = gemini_vision_task(frame, "Describe all visible objects.")
-                    st.info(result)
+if command:
+    st.session_state.history.append(command)
 
-        # Currency Detection
-        elif "currency" in command.lower():
-            st.subheader("💵 Currency Detection via Camera")
-            ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
-            if ctx.video_transformer:
-                st.warning("Show currency clearly before capturing")
-                if st.button("💸 Detect Currency"):
-                    frame = ctx.video_transformer.last_frame
-                    result = gemini_vision_task(frame, "What currency and denomination is this?")
-                    st.info(result)
+    # Object Detection
+    if "object" in command.lower():
+        st.subheader("📸 Object Detection via Camera")
+        ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
+        if ctx.video_transformer:
+            st.warning("Click the button after showing the object")
+            if st.button("🖼️ Capture Frame"):
+                frame = ctx.video_transformer.last_frame
+                result = gemini_vision_task(frame, "Describe all visible objects.")
+                st.info(result)
 
-        # Translation
-        elif "translate" in command.lower():
-            st.subheader("🌐 Translation")
-            if "to" in command.lower():
-                parts = command.lower().split("to")
-                target_lang = parts[-1].strip()
-                text = st.text_area("Enter text to translate")
-                if st.button("Translate"):
-                    translated = gemini_translate(text, target_lang)
-                    st.success(translated)
-            else:
-                st.warning("Please say: Translate to [language]")
+    # Currency Detection
+    elif "currency" in command.lower():
+        st.subheader("💵 Currency Detection via Camera")
+        ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
+        if ctx.video_transformer:
+            st.warning("Show currency clearly before capturing")
+            if st.button("💸 Detect Currency"):
+                frame = ctx.video_transformer.last_frame
+                result = gemini_vision_task(frame, "What currency and denomination is this?")
+                st.info(result)
 
-        # Location
-        elif "where am i" in command.lower() or "location" in command.lower():
-            st.subheader("📍 Your Location")
-            location = describe_location()
-            st.info(location)
-
+    # Translation
+    elif "translate" in command.lower():
+        st.subheader("🌐 Translation")
+        if "to" in command.lower():
+            parts = command.lower().split("to")
+            target_lang = parts[-1].strip()
+            text = st.text_area("Enter text to translate")
+            if st.button("Translate"):
+                translated = gemini_translate(text, target_lang)
+                st.success(translated)
         else:
-            st.warning("Command not recognized.")
+            st.warning("Please say: Translate to [language]")
+
+    # Location
+    elif "where am i" in command.lower() or "location" in command.lower():
+        st.subheader("📍 Your Location")
+        location = describe_location()
+        st.info(location)
+
+    else:
+        st.warning("Command not recognized.")
 
 # --------------------------
 # Command History
