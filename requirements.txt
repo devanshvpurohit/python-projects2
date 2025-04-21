@@ -7,4 +7,3 @@ pyttsx3
 speechrecognition
 av
 numpy
-pyaudio
