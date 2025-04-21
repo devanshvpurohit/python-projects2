@@ -1,3 +1,5 @@
+# suradas.py — AI Assistant for the Visually Impaired using Gemini 1.5
+
 import streamlit as st
 import pyttsx3
 import google.generativeai as genai
@@ -7,6 +9,7 @@ import av
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
+from io import BytesIO
 
 # --------------------------
 # Gemini 1.5 Configuration
@@ -24,18 +27,12 @@ def speak(text):
     engine.runAndWait()
 
 # --------------------------
-# Voice Command (Mic + Keyboard Fallback)
+# Voice or Text Command Input
 # --------------------------
-def listen_and_process():
-    st.subheader("🎙️ Speak Now or Type Below")
-    audio = mic_recorder(start_prompt="🎤 Click to record", stop_prompt="Stop", just_once=True, key="mic")
-
-    with st.expander("💬 Or type your command here"):
-        typed_command = st.text_input("Type Command:", key="typed_cmd")
-
-    if typed_command:
-        speak(f"You typed: {typed_command}")
-        return typed_command
+def get_command():
+    st.subheader("🎙️ Speak or type your command")
+    audio = mic_recorder(start_prompt="Click to record", stop_prompt="Stop", just_once=True, key="mic")
+    text_input = st.text_input("Or type your command below")
 
     if audio:
         try:
@@ -44,49 +41,60 @@ def listen_and_process():
             text = recognizer.recognize_google(audio_data)
             speak(f"You said: {text}")
             return text
-        except Exception:
+        except:
             speak("Sorry, I couldn't understand the audio.")
             return None
+    elif text_input:
+        return text_input
+    return None
 
 # --------------------------
-# Camera Frame Grabber
+# Camera Stream Capture
 # --------------------------
-class VideoCapture(VideoTransformerBase):
+class VideoProcessor(VideoTransformerBase):
+    def __init__(self):
+        self.last_frame = None
+
     def transform(self, frame):
         self.last_frame = frame.to_image()
         return frame
 
+def image_to_bytes(img):
+    buf = BytesIO()
+    img.save(buf, format='JPEG')
+    return buf.getvalue()
+
 # --------------------------
 # Gemini Vision Task
 # --------------------------
-def gemini_vision_task(image, prompt):
+def gemini_vision(image, prompt):
     try:
         image_bytes = image_to_bytes(image)
         response = vision_model.generate_content([prompt, image_bytes])
         speak(response.text)
         return response.text
     except Exception as e:
-        speak("There was an error processing the image")
+        speak("Vision processing error.")
         return f"Error: {e}"
 
-def image_to_bytes(img):
-    from io import BytesIO
-    buf = BytesIO()
-    img.save(buf, format='JPEG')
-    return buf.getvalue()
+# --------------------------
+# Normal Search
+# --------------------------
+def gemini_search(query):
+    try:
+        response = model.generate_content(query)
+        speak(response.text)
+        return response.text
+    except Exception as e:
+        speak("Search failed.")
+        return f"Error: {e}"
 
 # --------------------------
 # Translation
 # --------------------------
-def gemini_translate(text, target_lang):
-    prompt = f"Translate this to {target_lang}: {text}"
-    try:
-        response = model.generate_content(prompt)
-        speak(response.text)
-        return response.text
-    except Exception as e:
-        speak("Translation failed.")
-        return f"Error: {e}"
+def gemini_translate(text, lang):
+    prompt = f"Translate this to {lang}: {text}"
+    return gemini_search(prompt)
 
 # --------------------------
 # Geolocation
@@ -95,72 +103,73 @@ def describe_location():
     try:
         data = requests.get("https://ipapi.co/json").json()
         location_info = f"IP: {data['ip']}, City: {data['city']}, Region: {data['region']}, Country: {data['country_name']}"
-        prompt = f"Give a friendly description of this location: {location_info}"
-        response = model.generate_content(prompt)
-        speak(response.text)
-        return response.text
+        prompt = f"Describe this location for a visually impaired person: {location_info}"
+        return gemini_search(prompt)
     except Exception as e:
-        speak("Could not retrieve your location.")
+        speak("Location retrieval failed.")
         return f"Error: {e}"
 
 # --------------------------
-# UI + Session State
+# Streamlit UI
 # --------------------------
-st.set_page_config(page_title="Suradas", layout="centered", initial_sidebar_state="collapsed")
-st.title("🎧 Suradas — Gemini 1.5-Powered AI for the Visually Impaired")
+st.set_page_config(page_title="Suradas", layout="centered")
+st.title("🎧 Suradas — Gemini 1.5 AI for the Visually Impaired")
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-command = listen_and_process()
+ctx = webrtc_streamer(key="live-camera", video_transformer_factory=VideoProcessor)
+
+command = get_command()
 
 if command:
-    st.session_state.history.append(command.lower())
+    st.session_state.history.append(command)
 
     # Object Detection
     if "object" in command.lower():
-        speak("Object Detection Mode")
-        ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
-        if ctx.video_transformer:
-            speak("Show the object and say 'capture'")
-            if listen_and_process().lower() == "capture":
-                frame = ctx.video_transformer.last_frame
-                gemini_vision_task(frame, "Describe all visible objects.")
+        speak("Describing visible objects...")
+        if ctx.video_transformer and ctx.video_transformer.last_frame:
+            result = gemini_vision(ctx.video_transformer.last_frame, "Describe all visible objects.")
+            st.write(result)
 
-    # Currency Detection
-    elif "currency" in command.lower():
-        speak("Currency Detection Mode")
-        ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
-        if ctx.video_transformer:
-            speak("Show the currency and say 'detect'")
-            if listen_and_process().lower() == "detect":
-                frame = ctx.video_transformer.last_frame
-                gemini_vision_task(frame, "What currency and denomination is this?")
+    # Human Detection
+    elif "human" in command.lower() or "person" in command.lower():
+        speak("Checking for human presence...")
+        if ctx.video_transformer and ctx.video_transformer.last_frame:
+            result = gemini_vision(ctx.video_transformer.last_frame, "Is there any person in this image?")
+            st.write(result)
 
     # Translation
-    elif "translate" in command.lower():
-        if "to" in command.lower():
-            parts = command.lower().split("to")
-            target_lang = parts[-1].strip()
-            speak(f"Say the text you want to translate to {target_lang}")
-            text_to_translate = listen_and_process()
-            if text_to_translate:
-                gemini_translate(text_to_translate, target_lang)
-        else:
-            speak("Please say: Translate to [language]")
+    elif "translate" in command.lower() and "to" in command.lower():
+        parts = command.lower().split("to")
+        target_lang = parts[-1].strip()
+        speak(f"Say the text you want to translate to {target_lang}.")
+        source_text = get_command()
+        if source_text:
+            result = gemini_translate(source_text, target_lang)
+            st.write(result)
 
     # Location
-    elif "where am i" in command.lower() or "location" in command.lower():
-        speak("Getting your location")
-        describe_location()
+    elif "location" in command.lower() or "where am i" in command.lower():
+        speak("Describing your current location.")
+        result = describe_location()
+        st.write(result)
+
+    # Search
+    elif "search" in command.lower():
+        speak("Say what you'd like to search.")
+        query = get_command()
+        if query:
+            result = gemini_search(query)
+            st.write(result)
 
     else:
-        speak("Command not recognized. Try saying object, currency, translate, or where am I.")
+        speak("Command not recognized. Try object, human, translate, location, or search.")
 
 # --------------------------
 # Command History
 # --------------------------
 st.divider()
-st.subheader("🧠 Past Commands (Session)")
+st.subheader("🧠 Past Commands")
 for cmd in st.session_state.history:
     st.write("→", cmd)
