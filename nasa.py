@@ -1,5 +1,3 @@
-# suradas.py — AI Mockup for the Blind using Gemini 1.5 (No PyAudio)
-
 import streamlit as st
 import pyttsx3
 import google.generativeai as genai
@@ -9,6 +7,7 @@ import av
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
+import io
 
 # --------------------------
 # Gemini 1.5 Configuration
@@ -26,7 +25,7 @@ def speak(text):
     engine.runAndWait()
 
 # --------------------------
-# Voice Command (No PyAudio)
+# Voice Command (Fixed)
 # --------------------------
 def listen_and_process():
     st.subheader("🎙️ Speak Now")
@@ -35,12 +34,15 @@ def listen_and_process():
     if audio:
         try:
             recognizer = sr.Recognizer()
-            audio_data = sr.AudioData(audio["bytes"], sample_rate=audio["sample_rate"], sample_width=2)
-            text = recognizer.recognize_google(audio_data)
-            speak(f"You said: {text}")
-            return text
+            audio_file = io.BytesIO(audio["bytes"])
+            with sr.AudioFile(audio_file) as source:
+                audio_data = recognizer.record(source)
+                text = recognizer.recognize_google(audio_data)
+                speak(f"You said: {text}")
+                return text
         except Exception as e:
             speak("Sorry, I couldn't understand the audio.")
+            st.error(f"Speech recognition error: {e}")
             return None
 
 # --------------------------
