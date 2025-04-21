@@ -1,4 +1,4 @@
-# suradas.py
+# suradas.py — AI Mockup for the Blind using Gemini 1.5
 
 import streamlit as st
 import speech_recognition as sr
@@ -12,7 +12,7 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 # --------------------------
 # Gemini 1.5 Configuration
 # --------------------------
-genai.configure(api_key="AIzaSyA0INYcsqw8dkI9KbEB7jt4l7hafoLDNW4")
+genai.configure(api_key="YOUR_GEMINI_API_KEY")
 model = genai.GenerativeModel(model_name="models/gemini-1.5-pro")
 vision_model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-vision")
 
@@ -30,15 +30,14 @@ def speak(text):
 def listen_and_process():
     r = sr.Recognizer()
     with sr.Microphone() as source:
-        st.info("🎙️ Listening...")
+        speak("Listening for your command")
         audio = r.listen(source, timeout=5)
     try:
         text = r.recognize_google(audio)
-        st.success(f"You said: {text}")
         speak(f"You said: {text}")
         return text
     except:
-        st.error("Sorry, I didn't catch that.")
+        speak("Sorry, I didn't catch that.")
         return None
 
 # --------------------------
@@ -59,6 +58,7 @@ def gemini_vision_task(image, prompt):
         speak(response.text)
         return response.text
     except Exception as e:
+        speak("There was an error processing the image")
         return f"Error: {e}"
 
 def image_to_bytes(img):
@@ -77,6 +77,7 @@ def gemini_translate(text, target_lang):
         speak(response.text)
         return response.text
     except Exception as e:
+        speak("Translation failed.")
         return f"Error: {e}"
 
 # --------------------------
@@ -91,82 +92,62 @@ def describe_location():
         speak(response.text)
         return response.text
     except Exception as e:
+        speak("Could not retrieve your location.")
         return f"Error: {e}"
 
 # --------------------------
 # UI + Session State
 # --------------------------
-st.set_page_config(page_title="Suradas", layout="centered")
-st.title("🎧 Suradas — Gemini 1.5-Powered AI Assistant")
+st.set_page_config(page_title="Suradas", layout="centered", initial_sidebar_state="collapsed")
+st.title("🎧 Suradas — Gemini 1.5-Powered AI for the Visually Impaired")
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-st.markdown("#### Say a command like:")
-st.code("""
-• Detect object
-• Detect currency
-• Translate to Hindi
-• Where am I
-""")
-
-command = None
-
-if st.button("🎙️ Start Listening"):
-    try:
-        command = listen_and_process()
-    except:
-        st.warning("🎤 Microphone not available. Please type your command below.")
-
-if not command:
-    command = st.text_input("⌨️ Type your command here:")
+command = listen_and_process()
 
 if command:
     st.session_state.history.append(command)
 
     # Object Detection
     if "object" in command.lower():
-        st.subheader("📸 Object Detection via Camera")
+        speak("Object Detection Mode")
         ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
         if ctx.video_transformer:
-            st.warning("Click the button after showing the object")
-            if st.button("🖼️ Capture Frame"):
+            speak("Show the object and say 'capture' to analyze")
+            if listen_and_process() == "capture":
                 frame = ctx.video_transformer.last_frame
                 result = gemini_vision_task(frame, "Describe all visible objects.")
-                st.info(result)
 
     # Currency Detection
     elif "currency" in command.lower():
-        st.subheader("💵 Currency Detection via Camera")
+        speak("Currency Detection Mode")
         ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
         if ctx.video_transformer:
-            st.warning("Show currency clearly before capturing")
-            if st.button("💸 Detect Currency"):
+            speak("Show the currency and say 'detect'")
+            if listen_and_process() == "detect":
                 frame = ctx.video_transformer.last_frame
                 result = gemini_vision_task(frame, "What currency and denomination is this?")
-                st.info(result)
 
     # Translation
     elif "translate" in command.lower():
-        st.subheader("🌐 Translation")
         if "to" in command.lower():
             parts = command.lower().split("to")
             target_lang = parts[-1].strip()
-            text = st.text_area("Enter text to translate")
-            if st.button("Translate"):
-                translated = gemini_translate(text, target_lang)
-                st.success(translated)
+            speak(f"Say the text you want to translate to {target_lang}")
+            text_to_translate = listen_and_process()
+            if text_to_translate:
+                translated = gemini_translate(text_to_translate, target_lang)
         else:
-            st.warning("Please say: Translate to [language]")
+            speak("Please say: Translate to [language]")
 
     # Location
     elif "where am i" in command.lower() or "location" in command.lower():
-        st.subheader("📍 Your Location")
-        location = describe_location()
-        st.info(location)
+        speak("Getting your location")
+        describe_location()
 
     else:
-        st.warning("Command not recognized.")
+        speak("Command not recognized. Try saying object, currency, translate, or where am I")
 
 # --------------------------
 # Command History
