@@ -7,12 +7,11 @@ import av
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
-import io
 
 # --------------------------
 # Gemini 1.5 Configuration
 # --------------------------
-genai.configure(api_key="YOUR_GEMINI_API_KEY")
+genai.configure(api_key="AIzaSyA0INYcsqw8dkI9KbEB7jt4l7hafoLDNW4")
 model = genai.GenerativeModel(model_name="models/gemini-1.5-pro")
 vision_model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-vision")
 
@@ -25,24 +24,28 @@ def speak(text):
     engine.runAndWait()
 
 # --------------------------
-# Voice Command (Fixed)
+# Voice Command (Mic + Keyboard Fallback)
 # --------------------------
 def listen_and_process():
-    st.subheader("🎙️ Speak Now")
-    audio = mic_recorder(start_prompt="Click to record", stop_prompt="Stop", just_once=True, key="mic")
+    st.subheader("🎙️ Speak Now or Type Below")
+    audio = mic_recorder(start_prompt="🎤 Click to record", stop_prompt="Stop", just_once=True, key="mic")
+
+    with st.expander("💬 Or type your command here"):
+        typed_command = st.text_input("Type Command:", key="typed_cmd")
+
+    if typed_command:
+        speak(f"You typed: {typed_command}")
+        return typed_command
 
     if audio:
         try:
             recognizer = sr.Recognizer()
-            audio_file = io.BytesIO(audio["bytes"])
-            with sr.AudioFile(audio_file) as source:
-                audio_data = recognizer.record(source)
-                text = recognizer.recognize_google(audio_data)
-                speak(f"You said: {text}")
-                return text
-        except Exception as e:
+            audio_data = sr.AudioData(audio["bytes"], sample_rate=audio["sample_rate"], sample_width=2)
+            text = recognizer.recognize_google(audio_data)
+            speak(f"You said: {text}")
+            return text
+        except Exception:
             speak("Sorry, I couldn't understand the audio.")
-            st.error(f"Speech recognition error: {e}")
             return None
 
 # --------------------------
@@ -112,17 +115,17 @@ if "history" not in st.session_state:
 command = listen_and_process()
 
 if command:
-    st.session_state.history.append(command)
+    st.session_state.history.append(command.lower())
 
     # Object Detection
     if "object" in command.lower():
         speak("Object Detection Mode")
         ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
         if ctx.video_transformer:
-            speak("Show the object and say 'capture' to analyze")
-            if listen_and_process() == "capture":
+            speak("Show the object and say 'capture'")
+            if listen_and_process().lower() == "capture":
                 frame = ctx.video_transformer.last_frame
-                result = gemini_vision_task(frame, "Describe all visible objects.")
+                gemini_vision_task(frame, "Describe all visible objects.")
 
     # Currency Detection
     elif "currency" in command.lower():
@@ -130,9 +133,9 @@ if command:
         ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
         if ctx.video_transformer:
             speak("Show the currency and say 'detect'")
-            if listen_and_process() == "detect":
+            if listen_and_process().lower() == "detect":
                 frame = ctx.video_transformer.last_frame
-                result = gemini_vision_task(frame, "What currency and denomination is this?")
+                gemini_vision_task(frame, "What currency and denomination is this?")
 
     # Translation
     elif "translate" in command.lower():
@@ -142,7 +145,7 @@ if command:
             speak(f"Say the text you want to translate to {target_lang}")
             text_to_translate = listen_and_process()
             if text_to_translate:
-                translated = gemini_translate(text_to_translate, target_lang)
+                gemini_translate(text_to_translate, target_lang)
         else:
             speak("Please say: Translate to [language]")
 
@@ -152,7 +155,7 @@ if command:
         describe_location()
 
     else:
-        speak("Command not recognized. Try saying object, currency, translate, or where am I")
+        speak("Command not recognized. Try saying object, currency, translate, or where am I.")
 
 # --------------------------
 # Command History
