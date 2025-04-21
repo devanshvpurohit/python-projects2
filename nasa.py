@@ -12,7 +12,7 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 # --------------------------
 # Gemini 1.5 Configuration
 # --------------------------
-genai.configure(api_key="YOUR_GEMINI_API_KEY")
+genai.configure(api_key="AIzaSyA0INYcsqw8dkI9KbEB7jt4l7hafoLDNW4")
 model = genai.GenerativeModel(model_name="models/gemini-1.5-pro")
 vision_model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-vision")
 
