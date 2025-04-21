@@ -1,9 +1,9 @@
 streamlit
-torch
-torchvision
-torchaudio
-opencv-python-headless
-numpy
-Pillow
-google-generativeai
 streamlit-webrtc
+google-generativeai>=0.3.1
+requests
+pillow
+pyttsx3
+speechrecognition
+av
+numpy
