@@ -7,6 +7,4 @@ av
 streamlit-webrtc
 streamlit-mic-recorder
 speechrecognition
-espeak
-libespeak1
-ffmpeg
+
