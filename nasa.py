@@ -1,82 +1,169 @@
+# suradas.py
+
 import streamlit as st
-import torch
-import cv2
-import numpy as np
-import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+import speech_recognition as sr
+import pyttsx3
 import google.generativeai as genai
+import requests
 from PIL import Image
+import av
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
-# --- HARD-CODED API KEY (use only for private testing) ---
-GOOGLE_API_KEY = "AIzaSyA5nrHFYD3u6nXnj70POa7bc8qr0vB9qKA"
-genai.configure(api_key=GOOGLE_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-pro-vision")
+# --------------------------
+# Gemini 1.5 Configuration
+# --------------------------
+genai.configure(api_key="YOUR_GEMINI_API_KEY")
+model = genai.GenerativeModel(model_name="models/gemini-1.5-pro")
+vision_model = genai.GenerativeModel(model_name="models/gemini-1.5-pro-vision")
 
-# Load YOLOv5 model from GitHub
-@st.cache_resource
-def load_model():
-    return torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True)
+# --------------------------
+# Text to Speech
+# --------------------------
+def speak(text):
+    engine = pyttsx3.init()
+    engine.say(text)
+    engine.runAndWait()
 
-model_yolo = load_model()
-model_yolo.eval()
-
-# Streamlit page setup
-st.set_page_config(page_title="YOLO + Gemini Vision", layout="wide")
-st.title("🔍 Real-time Object Detection with Gemini Pro Vision")
-st.sidebar.title("📊 Gemini Object Insights")
-sidebar_placeholder = st.sidebar.empty()
-
-# Gemini analysis function
-def analyze_object(img_pil, class_name):
-    prompt = f"Analyze this object. What is it, and what are its potential uses or characteristics? This is a '{class_name}'."
+# --------------------------
+# Voice Command
+# --------------------------
+def listen_and_process():
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("🎙️ Listening...")
+        audio = r.listen(source, timeout=5)
     try:
-        response = gemini_model.generate_content([prompt, img_pil])
+        text = r.recognize_google(audio)
+        st.success(f"You said: {text}")
+        speak(f"You said: {text}")
+        return text
+    except:
+        st.error("Sorry, I didn't catch that.")
+        return None
+
+# --------------------------
+# Camera Frame Grabber
+# --------------------------
+class VideoCapture(VideoTransformerBase):
+    def transform(self, frame):
+        self.last_frame = frame.to_image()
+        return frame
+
+# --------------------------
+# Gemini Vision Task
+# --------------------------
+def gemini_vision_task(image, prompt):
+    try:
+        image_bytes = image_to_bytes(image)
+        response = vision_model.generate_content([prompt, image_bytes])
+        speak(response.text)
         return response.text
     except Exception as e:
         return f"Error: {e}"
 
-# YOLOv5 + Gemini processor
-class YOLOProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.latest_gemini_outputs = []
+def image_to_bytes(img):
+    from io import BytesIO
+    buf = BytesIO()
+    img.save(buf, format='JPEG')
+    return buf.getvalue()
 
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        img = frame.to_ndarray(format="bgr24")
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+# --------------------------
+# Translation
+# --------------------------
+def gemini_translate(text, target_lang):
+    prompt = f"Translate this to {target_lang}: {text}"
+    try:
+        response = model.generate_content(prompt)
+        speak(response.text)
+        return response.text
+    except Exception as e:
+        return f"Error: {e}"
 
-        results = model_yolo(img_rgb)
-        self.latest_gemini_outputs.clear()
+# --------------------------
+# Geolocation
+# --------------------------
+def describe_location():
+    try:
+        data = requests.get("https://ipapi.co/json").json()
+        location_info = f"IP: {data['ip']}, City: {data['city']}, Region: {data['region']}, Country: {data['country_name']}"
+        prompt = f"Give a friendly description of this location: {location_info}"
+        response = model.generate_content(prompt)
+        speak(response.text)
+        return response.text
+    except Exception as e:
+        return f"Error: {e}"
 
-        for *box, conf, cls in results.xyxy[0]:
-            x1, y1, x2, y2 = map(int, box)
-            class_name = model_yolo.names[int(cls)]
+# --------------------------
+# UI + Session State
+# --------------------------
+st.set_page_config(page_title="Suradas", layout="centered")
+st.title("🎧 Suradas — Gemini 1.5-Powered AI Assistant")
 
-            crop_img = img[y1:y2, x1:x2]
-            if crop_img.size == 0:
-                continue
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-            pil_img = Image.fromarray(cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB))
-            gemini_response = analyze_object(pil_img, class_name)
-            self.latest_gemini_outputs.append((class_name, gemini_response))
+st.markdown("#### Say a command like:")
+st.code("""
+• Detect object
+• Detect currency
+• Translate to Hindi
+• Where am I
+""")
 
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(img, class_name, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+if st.button("🎙️ Start Listening"):
+    command = listen_and_process()
 
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+    if command:
+        st.session_state.history.append(command)
 
-# Start stream
-ctx = webrtc_streamer(
-    key="yolo-gemini-stream",
-    video_processor_factory=YOLOProcessor,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-)
+        # Object Detection
+        if "object" in command.lower():
+            st.subheader("📸 Object Detection via Camera")
+            ctx = webrtc_streamer(key="object-camera", video_transformer_factory=VideoCapture)
+            if ctx.video_transformer:
+                st.warning("Click the button after showing the object")
+                if st.button("🖼️ Capture Frame"):
+                    frame = ctx.video_transformer.last_frame
+                    result = gemini_vision_task(frame, "Describe all visible objects.")
+                    st.info(result)
 
-# Show Gemini results
-if ctx.video_processor:
-    with st.sidebar:
-        st.markdown("### Latest Gemini Results")
-        for cls_name, analysis in ctx.video_processor.latest_gemini_outputs:
-            with st.expander(f"🔎 {cls_name}"):
-                st.write(analysis)
+        # Currency Detection
+        elif "currency" in command.lower():
+            st.subheader("💵 Currency Detection via Camera")
+            ctx = webrtc_streamer(key="currency-camera", video_transformer_factory=VideoCapture)
+            if ctx.video_transformer:
+                st.warning("Show currency clearly before capturing")
+                if st.button("💸 Detect Currency"):
+                    frame = ctx.video_transformer.last_frame
+                    result = gemini_vision_task(frame, "What currency and denomination is this?")
+                    st.info(result)
+
+        # Translation
+        elif "translate" in command.lower():
+            st.subheader("🌐 Translation")
+            if "to" in command.lower():
+                parts = command.lower().split("to")
+                target_lang = parts[-1].strip()
+                text = st.text_area("Enter text to translate")
+                if st.button("Translate"):
+                    translated = gemini_translate(text, target_lang)
+                    st.success(translated)
+            else:
+                st.warning("Please say: Translate to [language]")
+
+        # Location
+        elif "where am i" in command.lower() or "location" in command.lower():
+            st.subheader("📍 Your Location")
+            location = describe_location()
+            st.info(location)
+
+        else:
+            st.warning("Command not recognized.")
+
+# --------------------------
+# Command History
+# --------------------------
+st.divider()
+st.subheader("🧠 Past Commands (Session)")
+for cmd in st.session_state.history:
+    st.write("→", cmd)
